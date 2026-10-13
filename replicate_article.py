@@ -94,8 +94,8 @@ system = System(
 ).to(device)
 
 
-visualize_tensor(input_field.intensity(), title="Input field")
+#visualize_tensor(input_field.intensity(), title="Input field")
 
-output_field = system.measure_at_z(input_field, target_pos)
-visualize_tensor(output_field.intensity(), title="Output Field")
-visualize_tensor(phi, title="DOE")
+#output_field = system.measure_at_z(input_field, target_pos)
+#visualize_tensor(output_field.intensity(), title="Output Field")
+#visualize_tensor(phi, title="DOE")
