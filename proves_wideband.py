@@ -364,17 +364,17 @@ def create_sector_doe(DOEs: list, a: float):
     return doe_grid
 
 
-f = 300*1e9
+f0 = 310*1e9
 
 does = []
 
 for i in range(0,6, 1):
-    f = f + i*1e9
+    f = f0 + i*10*1e9
 
     if i == 0:
         initial_doe = []
-    else:
-        initial_doe = does[-1]
+    #else:
+    #    initial_doe = np.exp(1j * np.angle(does[-1]))
 
     params = {
         "fl": 15e-2,  # cm
@@ -387,16 +387,17 @@ for i in range(0,6, 1):
 
     DOE_maker = GS_DOE(params)
     DOE_maker.makeProfiles(p=4)
-    DOE_maker.showInputs()
+    #DOE_maker.showInputs()
     DOE_maker.makeDOE(initial_doe, initialSlope=4, maxiter=10000)
-
+    DOE_maker.showResults(wrapped=False)
+    initial_doe = DOE_maker.getDOE()
     does.append(np.unwrap(np.angle(DOE_maker.getDOE())))
 
 radi1, prova1 = create_interspersed_doe(does)
 prova1 = prova1[:-1, :-1]
 radi2, prova2 = create_interspersed_doe(does, True)
 prova2 = prova2[:-1, :-1]
-prova3 = create_sector_doe(does, 360/60)
+prova3 = create_sector_doe(does, 360/120)
 prova3 = prova3[:-1, :-1]
 
 fig, ax = plt.subplots(1,3,figsize = (10,3))
@@ -413,14 +414,8 @@ plt.show()
 
 
 for i in range(0,6, 1):
-    f = f + i * 1e9
+    f = f0 + i * 10*1e9
 
-    if i == 0:
-        initial_doe = []
-    else:
-        initial_doe = does[-1]
-
-    print(initial_doe)
     params = {
         "fl": 15e-2,  # cm
         "wl": 3e8 / f,
