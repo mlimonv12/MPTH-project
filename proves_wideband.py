@@ -8,6 +8,7 @@ import numpy as np
 from scipy.interpolate import interp1d
 from pyhank import HankelTransform
 import torch
+import itertools
 
 import torchoptics
 from torchoptics.profiles import gaussian, square, circle
@@ -70,6 +71,7 @@ def GerchbergSaxton(inputProfile, goalFunction, transformer, initial_doe, radius
     goalProfile = goalFunction * np.sqrt(P_in / P_goal)
 
     # ------------------
+    adaptive_goal = np.copy(goalProfile)
 
     for i in range(maxiter):
 
@@ -90,8 +92,12 @@ def GerchbergSaxton(inputProfile, goalFunction, transformer, initial_doe, radius
         # check for MSE with radial weighting
         error = MSE_w(goalProfile, U_im_abs, weights)
 
-        # replace amplitude, retain phase
-        U_image = goalProfile * np.exp(1j * np.angle(U_image))
+        # Compensació proporcional de l'error d'amplitud (guany de 0.5)
+        adaptive_goal = adaptive_goal + 0.5 * (goalProfile - U_im_abs)
+        adaptive_goal[adaptive_goal < 0] = 0  # Evita amplituds negatives
+
+        # Reemplaça l'amplitud fent servir l'objectiu dinàmic
+        U_image = adaptive_goal * np.exp(1j * np.angle(U_image))
 
         # Check for flatness
         #flatness = (max(I) - min(I))/(max(I) + min(I))
@@ -363,13 +369,111 @@ def create_sector_doe(DOEs: list, a: float):
 
     return doe_grid
 
+def create_permuted_sector_doe(DOEs: list, a: float):
+    """
+    1. Creates n! auxiliary concentric radii from all permutations of the input DOEs.
+    2. Maps these auxiliary radii onto angular sectors to form a 2D lens.
 
-f0 = 310*1e9
+    Parameters
+    ----------
+    DOEs : list or np.ndarray
+        List of 1D arrays, where DOEs[i] contains the radial profile.
+    a : float
+        The angle (in degrees) of each circular sector. Can be fractional.
+        360 / a must result in an integer that is a multiple of len(DOEs)!.
+
+    Returns
+    -------
+    doe_grid : np.ndarray
+        2D circular image of shape (2*radius_len, 2*radius_len).
+    """
+    DOEs = [np.asarray(doe) for doe in DOEs]
+    n = len(DOEs)
+
+    if n == 0:
+        raise ValueError("DOEs array must contain at least one lens profile.")
+
+    # Standardize lengths to ensure vectorization works safely
+    radius_len = len(DOEs[0])
+    padded_DOEs = []
+    for doe in DOEs:
+        if len(doe) < radius_len:
+            # Pad with the last value if too short
+            padded_DOEs.append(np.pad(doe, (0, radius_len - len(doe)), mode='edge'))
+        else:
+            # Clip if too long
+            padded_DOEs.append(doe[:radius_len])
+
+    orig_stack = np.vstack(padded_DOEs)
+
+    # 1. Generate all permutations of lens indices (0 to n-1)
+    # For n=3, this creates (0,1,2), (0,2,1), (1,0,2), (1,2,0), (2,0,1), (2,1,0)
+    perms = list(itertools.permutations(range(n)))
+    num_perms = len(perms)
+
+    # 2. Vectorized generation of auxiliary radii
+    r_idx = np.arange(radius_len)
+    base_lens_indices = r_idx % n  # Sequence: 0, 1, 2, 0, 1, 2...
+
+    aux_DOEs = []
+    for p in perms:
+        p_array = np.array(p)
+        # Translate the base sequence into the permuted sequence
+        permuted_lens_indices = p_array[base_lens_indices]
+        # Fetch the radial values for this specific permutation
+        aux_radius = orig_stack[permuted_lens_indices, r_idx]
+        aux_DOEs.append(aux_radius)
+
+    # 3. Validate angle parameter 'a' against the number of PERMUTATIONS (n!)
+    num_sectors_exact = 360.0 / a
+    num_sectors = int(np.round(num_sectors_exact))
+
+    if not np.isclose(num_sectors_exact, num_sectors, atol=1e-9):
+        raise ValueError(
+            f"360 must be evenly divisible by angle 'a'. "
+            f"Got 360 / {a} = {num_sectors_exact}"
+        )
+
+    if num_sectors % num_perms != 0:
+        raise ValueError(
+            f"The number of sectors ({num_sectors}) must be a multiple "
+            f"of the number of auxiliary permutations ({num_perms} for n={n})."
+        )
+
+    # 4. Create 2D coordinate grid (Cartesian to Polar)
+    g = 2 * radius_len
+    center = (g - 1) / 2.0
+    y, x = np.ogrid[:g, :g]
+
+    # Radial distances
+    r_grid = np.sqrt((x - center) ** 2 + (y - center) ** 2)
+    r_indices = np.round(r_grid).astype(int)
+    r_indices = np.clip(r_indices, 0, radius_len - 1)
+
+    # Angular positions
+    theta_grid = np.arctan2(y - center, x - center)
+    theta_deg = np.degrees(theta_grid) % 360
+
+    # 5. Determine which auxiliary radius each pixel belongs to
+    sector_idx = np.floor(theta_deg / a).astype(int)
+    sector_idx = np.clip(sector_idx, 0, num_sectors - 1)
+
+    # Map the sector to one of the generated permutations
+    aux_idx = sector_idx % num_perms
+
+    # 6. Map values from the auxiliary DOEs onto the 2D grid
+    aux_stack = np.vstack(aux_DOEs)
+    doe_grid = aux_stack[aux_idx, r_indices]
+
+    return doe_grid
+
+
+f0 = 300*1e9
 
 does = []
 
 for i in range(0,6, 1):
-    f = f0 + i*10*1e9
+    f = f0 + i*20*1e9
 
     if i == 0:
         initial_doe = []
@@ -397,7 +501,9 @@ radi1, prova1 = create_interspersed_doe(does)
 prova1 = prova1[:-1, :-1]
 radi2, prova2 = create_interspersed_doe(does, True)
 prova2 = prova2[:-1, :-1]
-prova3 = create_sector_doe(does, 360/120)
+#prova3 = create_sector_doe(does, 360/120)
+#prova3 = prova3[:-1, :-1]
+prova3 = create_permuted_sector_doe(does, 360/1440)
 prova3 = prova3[:-1, :-1]
 
 fig, ax = plt.subplots(1,3,figsize = (10,3))
@@ -414,7 +520,7 @@ plt.show()
 
 
 for i in range(0,6, 1):
-    f = f0 + i * 10*1e9
+    f = f0 + i * 20*1e9
 
     params = {
         "fl": 15e-2,  # cm
@@ -541,6 +647,49 @@ for i in range(0,6, 1):
     ax[1,2].imshow(output_field_6.intensity().detach().numpy())
     ax[1,2].set_title("Output intensity 6")
 
+    plt.show()
+
+
+    # Group outputs for easy iteration
+    outputs = [
+        output_field_1, output_field_2, output_field_3,
+        output_field_4, output_field_5, output_field_6
+    ]
+
+    # Increase figsize so the 1D line plots have enough room to be readable
+    fig, ax = plt.subplots(2, 3, figsize=(15, 8))
+
+    # Define spatial axis in mm
+    shape = 2 * params['N'] - 1
+    center_idx = params['N'] - 1
+    distance_mm = np.arange(shape) * dx * 10
+
+    for i, output_field in enumerate(outputs):
+        row = i // 3
+        col = i % 3
+
+        # Extract 2D array and normalize to 1 (a.u.)
+        I = output_field.intensity().detach().cpu().numpy()
+        I_norm = I / np.max(I)
+
+        # Extract central cross-sections
+        x_slice = I_norm[center_idx, :]
+        y_slice = I_norm[:, center_idx]
+
+        # Plot x and y directions
+        ax[row, col].plot(distance_mm, x_slice, color='forestgreen', linestyle='-', label='x direction')
+        ax[row, col].plot(distance_mm, y_slice, color='forestgreen', linestyle=':', label='y direction')
+
+        # Formatting
+        ax[row, col].set_title(f"Output intensity {i + 1}")
+        ax[row, col].set_xlabel("Distance (mm)")
+        ax[row, col].set_ylabel("Irradiance (a.u.)")
+
+        # Add legend only to the first subplot to keep the grid clean
+        if i == 0:
+            ax[row, col].legend(loc='lower left')
+
+    plt.tight_layout()
     plt.show()
 
 
