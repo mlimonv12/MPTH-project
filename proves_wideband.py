@@ -473,7 +473,7 @@ f0 = 300*1e9
 does = []
 
 for i in range(0,6, 1):
-    f = f0 + i*20*1e9
+    f = f0 + i*100*1e9
 
     if i == 0:
         initial_doe = []
@@ -520,7 +520,7 @@ plt.show()
 
 
 for i in range(0,6, 1):
-    f = f0 + i * 20*1e9
+    f = f0 + i * 100*1e9
 
     params = {
         "fl": 15e-2,  # cm
