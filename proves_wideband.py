@@ -468,12 +468,12 @@ def create_permuted_sector_doe(DOEs: list, a: float):
     return doe_grid
 
 
-f0 = 300*1e9
+f0 = 200*1e9
 
 does = []
 
 for i in range(0,6, 1):
-    f = f0 + i*100*1e9
+    f = f0 + i*30*1e9
 
     if i == 0:
         initial_doe = []
@@ -483,7 +483,7 @@ for i in range(0,6, 1):
     params = {
         "fl": 15e-2,  # cm
         "wl": 3e8 / f,
-        "rmax": 7e-2,  # cm
+        "rmax": 10e-2,  # cm
         "N": 350,
         "w0": 0.02,  # cm
         "wgoal": 0.008  # cm
@@ -520,12 +520,12 @@ plt.show()
 
 
 for i in range(0,6, 1):
-    f = f0 + i * 100*1e9
+    f = f0 + i*30*1e9
 
     params = {
         "fl": 15e-2,  # cm
         "wl": 3e8 / f,
-        "rmax": 7e-2,  # cm
+        "rmax": 10e-2,  # cm
         "N": 350,
         "w0": 0.02,  # cm
         "wgoal": 0.008  # cm
@@ -628,6 +628,7 @@ for i in range(0,6, 1):
 
     output_field_6 = system.measure_at_z(input_field, params['fl'])
 
+    """
     fig, ax = plt.subplots(2,3,figsize = (10,3))
     ax[0,0].imshow(output_field_1.intensity().detach().numpy())
     ax[0,0].set_title("Output intensity 1")
@@ -648,7 +649,7 @@ for i in range(0,6, 1):
     ax[1,2].set_title("Output intensity 6")
 
     plt.show()
-
+    """
 
     # Group outputs for easy iteration
     outputs = [
@@ -664,6 +665,11 @@ for i in range(0,6, 1):
     center_idx = params['N'] - 1
     distance_mm = np.arange(shape) * dx * 10
 
+    # --- NEW: Define the goal profile (0.008 m = 8 mm waist/radius) ---
+    waist_mm = params["wgoal"]*10
+    center_pos_mm = distance_mm[center_idx]
+    # Creates a top-hat pulse: 1.0 inside the waist, 0.0 outside
+    goal_profile = np.where(np.abs(distance_mm - center_pos_mm) <= waist_mm, 1.0, 0.0)
     for i, output_field in enumerate(outputs):
         row = i // 3
         col = i % 3
@@ -679,6 +685,8 @@ for i in range(0,6, 1):
         # Plot x and y directions
         ax[row, col].plot(distance_mm, x_slice, color='forestgreen', linestyle='-', label='x direction')
         ax[row, col].plot(distance_mm, y_slice, color='forestgreen', linestyle=':', label='y direction')
+
+        ax[row, col].plot(distance_mm, goal_profile, color='red', linestyle='--', linewidth=1.5, label='Goal profile')
 
         # Formatting
         ax[row, col].set_title(f"Output intensity {i + 1}")
