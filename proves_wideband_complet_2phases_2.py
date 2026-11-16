@@ -9,7 +9,6 @@ import torchoptics
 from torchoptics.profiles import gaussian, circle
 from torchoptics.elements import PhaseModulator
 from torchoptics import Field, System
-# Ensure pyhank is installed (pip install pyhank)
 from pyhank import HankelTransform
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
